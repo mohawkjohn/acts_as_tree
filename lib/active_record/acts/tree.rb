@@ -58,6 +58,62 @@ module ActiveRecord
             end
           EOV
         end
+
+        # Configuration options are:
+        #
+        # * <tt>foreign_key</tt> - specifies the column name to use for tracking of the tree (default: +parent_id+)
+        # * <tt>order</tt> - makes it possible to sort the children according to this SQL snippet.
+        # * <tt>counter_cache</tt> - keeps a count in a +children_count+ column if set to +true+ (default: +false+).
+        # * <tt>tree_class_name</tt> - base class for tree -- both nodes and leaves
+        # * <tt>leaf_class_name</tt> - leaf class subtype of base tree class
+        # * <tt>node_class_name</tt> - node class subtype of base tree class
+        def acts_as_tree_node(options = {})
+          configuration = { :foreign_key => "parent_id", :order => nil, :counter_cache => nil, :node_class_name => 'Node', :leaf_class_name => 'Leaf' }
+          configuration.update(options) if options.is_a?(Hash)
+
+          belongs_to :parent, :class_name => configuration[:node_class_name], :foreign_key => configuration[:foreign_key], :counter_cache => configuration[:counter_cache]
+          #has_many :children, :foreign_key => configuration[:foreign_key], :order => configuration[:order], :dependent => :destroy
+
+          class_eval <<-EOV
+            has_many :child_nodes, :class_name => '#{configuration[:node_class_name]}', :foreign_key => "#{configuration[:foreign_key]}", :order => #{configuration[:order].nil? ? "nil" : %Q{"#{configuration[:order]}"}}, :dependent => :destroy
+            has_many :child_leaves, :class_name => '#{configuration[:leaf_class_name]}', :foreign_key => "#{configuration[:foreign_key]}", :order => #{configuration[:order].nil? ? "nil" : %Q{"#{configuration[:order]}"}}, :dependent => :destroy
+
+            include ActiveRecord::Acts::Tree::InstanceMethods
+
+            def self.roots
+              find(:all, :conditions => "#{configuration[:foreign_key]} IS NULL", :order => #{configuration[:order].nil? ? "nil" : %Q{"#{configuration[:order]}"}})
+            end
+
+            def self.root
+              find(:first, :conditions => "#{configuration[:foreign_key]} IS NULL", :order => #{configuration[:order].nil? ? "nil" : %Q{"#{configuration[:order]}"}})
+            end
+          EOV
+        end
+
+        # Configuration options are:
+        #
+        # * <tt>foreign_key</tt> - specifies the column name to use for tracking of the tree (default: +parent_id+)
+        # * <tt>order</tt> - makes it possible to sort the children according to this SQL snippet.
+        # * <tt>counter_cache</tt> - keeps a count in a +children_count+ column if set to +true+ (default: +false+).
+        # * <tt>node_class_name</tt> - the class name of the node (subclass of the tree base)
+        def acts_as_tree_leaf(options = {})
+          configuration = { :foreign_key => "parent_id", :order => nil, :counter_cache => nil, :node_class_name => 'Node' }
+          configuration.update(options) if options.is_a?(Hash)
+
+          belongs_to :parent, :class_name => configuration[:node_class_name], :foreign_key => configuration[:foreign_key], :counter_cache => configuration[:counter_cache]
+
+          class_eval <<-EOV
+            include ActiveRecord::Acts::Tree::InstanceMethods
+
+            def self.roots
+              find(:all, :conditions => "#{configuration[:foreign_key]} IS NULL", :order => #{configuration[:order].nil? ? "nil" : %Q{"#{configuration[:order]}"}})
+            end
+
+            def self.root
+              find(:first, :conditions => "#{configuration[:foreign_key]} IS NULL", :order => #{configuration[:order].nil? ? "nil" : %Q{"#{configuration[:order]}"}})
+            end
+          EOV
+        end
       end
 
       module InstanceMethods
@@ -69,6 +125,16 @@ module ActiveRecord
           nodes << node = node.parent while node.parent
           nodes
         end
+
+
+        # Returns list of children, whether nodes or leaves.
+        #
+        # NOTE: Will not return both, because that would take two queries and
+        # order will not be preserved.
+        def children
+          child_leaves.count == 0 ? child_nodes : child_leaves
+        end
+
 
         # Returns the root node of the tree.
         def root
