@@ -80,6 +80,10 @@ module ActiveRecord
 
             include ActiveRecord::Acts::Tree::InstanceMethods
 
+            def children
+              child_leaves.count == 0 ? child_nodes : child_leaves
+            end
+
             def self.roots
               find(:all, :conditions => "#{configuration[:foreign_key]} IS NULL", :order => #{configuration[:order].nil? ? "nil" : %Q{"#{configuration[:order]}"}})
             end
@@ -105,6 +109,8 @@ module ActiveRecord
           class_eval <<-EOV
             include ActiveRecord::Acts::Tree::InstanceMethods
 
+            def children; []; end
+
             def self.roots
               find(:all, :conditions => "#{configuration[:foreign_key]} IS NULL", :order => #{configuration[:order].nil? ? "nil" : %Q{"#{configuration[:order]}"}})
             end
@@ -125,16 +131,6 @@ module ActiveRecord
           nodes << node = node.parent while node.parent
           nodes
         end
-
-
-        # Returns list of children, whether nodes or leaves.
-        #
-        # NOTE: Will not return both, because that would take two queries and
-        # order will not be preserved.
-        def children
-          child_leaves.count == 0 ? child_nodes : child_leaves
-        end
-
 
         # Returns the root node of the tree.
         def root
